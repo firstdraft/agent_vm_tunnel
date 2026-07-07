@@ -17,7 +17,7 @@ Two moving parts, both installed for you:
   tunneled page loads and Turbo Streams / live reload aren't rejected — no
   editing of `config/environments`.
 - a **keep-alive script** (`bin/agent-vm-tunnel`) plus **Claude Code hooks** that bring
-  Postgres + the app + the tunnel up on session start and every turn, and
+  the database + the app + the tunnel up on session start and every turn, and
   self-heal after the VM reaps them on idle.
 
 The tunnel server itself lives in
@@ -30,7 +30,8 @@ Add it to the app you want to preview:
 
 ```ruby
 # Gemfile
-gem "agent_vm_tunnel"
+gem "agent_vm_tunnel", github: "firstdraft/agent_vm_tunnel"
+# once it's released on RubyGems, this becomes just: gem "agent_vm_tunnel"
 ```
 
 ```bash
@@ -42,8 +43,8 @@ The generator adds:
 
 | File | What it's for |
 |---|---|
-| `bin/agent-vm-tunnel` | Idempotent keep-alive: Postgres + the app + the chisel tunnel |
-| `cloud-vm-setup.sh` | One-shot Cloud VM provisioning (Ruby, Postgres, gems, chisel) |
+| `bin/agent-vm-tunnel` | Idempotent keep-alive: the database + the app + the chisel tunnel |
+| `cloud-vm-setup.sh` | One-shot Cloud VM provisioning (Ruby, your database, gems, chisel) |
 | `.claude/settings.json` | `SessionStart` + `UserPromptSubmit` hooks that run `bin/agent-vm-tunnel` |
 
 It **merges** into an existing `.claude/settings.json` — your other hooks and
@@ -51,8 +52,9 @@ settings are left alone.
 
 ## Use it (Claude Cloud VM)
 
-1. **Create a preview for this app** at <https://firstdraft.io> (one per app —
-   name it, e.g. `blog`) and copy the one line it shows:
+1. **Get access and create a preview.** Open the invite link the tunnel operator
+   sent you, sign in with GitHub at <https://firstdraft.io>, and create a preview
+   for this app (one per app — name it, e.g. `blog`). Copy the one line it shows:
    `AGENT_VM_TUNNEL=<slot>:<password>`.
 2. In your Cloud VM (**claude.ai/code → Add cloud environment**):
    - **Setup script** → point it at this repo's `cloud-vm-setup.sh`
