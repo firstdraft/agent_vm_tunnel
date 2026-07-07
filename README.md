@@ -147,7 +147,7 @@ enough.
 ## Requirements
 
 - Rails 7.0+ (Railtie + generator via `railties`)
-- Ruby 3.2+ (the app's own version is read from `.ruby-version`)
+- Ruby 3.3+ (the app's own version is read from `.ruby-version`)
 - An app whose `bin/dev` (or `bin/rails server`) listens on `:3000` (override
   with `APP_PORT`). SQLite, PostgreSQL, and MySQL/MariaDB all work — the
   generated `cloud-vm-setup.sh` detects the adapter from your lockfile and

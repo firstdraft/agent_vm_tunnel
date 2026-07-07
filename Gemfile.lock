@@ -197,7 +197,6 @@ DEPENDENCIES
   agent_vm_tunnel!
   irb
   minitest (~> 5.16)
-  parallel (~> 1.26)
   rake (~> 13.0)
   standard (~> 1.3)
 
