@@ -41,6 +41,34 @@ class InstallGeneratorTest < Rails::Generators::TestCase
     assert File.executable?(File.join(destination_root, "cloud-vm-setup.sh"))
   end
 
+  def test_setup_script_is_database_agnostic
+    run_generator
+    assert_file "cloud-vm-setup.sh" do |content|
+      # detects the adapter from the lockfile and branches on it
+      assert_match(/Gemfile\.lock/, content)
+      assert_match(/pg\)/, content)      # PostgreSQL branch
+      assert_match(/sqlite3 \| ""\)/, content)  # SQLite / none = no server
+      # no unconditional Postgres install
+      refute_match(/^apt-get install -y -qq postgresql$/, content)
+    end
+  end
+
+  def test_setup_script_reads_ruby_version_without_hardcoded_fallback
+    run_generator
+    assert_file "cloud-vm-setup.sh" do |content|
+      assert_match(/\.ruby-version/, content)
+      refute_match(/RUBY_VERSION:-4\.0\.3/, content)  # no firstdraft-specific default
+    end
+  end
+
+  def test_preview_only_starts_a_daemon_for_server_databases
+    run_generator
+    assert_file "bin/preview" do |content|
+      assert_match(/db_gem=/, content)
+      assert_match(/pg\)/, content)
+    end
+  end
+
   def test_creates_claude_hooks_when_absent
     run_generator
     assert_file ".claude/settings.json" do |content|

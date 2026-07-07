@@ -2,45 +2,70 @@
 # Setup script for the Claude cloud VM (claude.ai/code).
 #
 # The cloud VM is Ubuntu 24.04 (x86_64), runs as root, ships no Ruby, and has no
-# port-forwarding. This installs Ruby + Postgres + the app's gems, plus the chisel
-# client for previewing the running server through a reverse tunnel. `claude`
-# itself is already present (the VM *is* Claude Code), so it is not installed here.
+# port-forwarding. This installs Ruby + your app's database + gems, plus the
+# chisel client for previewing the running server through a reverse tunnel.
+# `claude` itself is already present (the VM *is* Claude Code), so it isn't
+# installed here.
 #
 # Point the cloud environment's setup script at this file. It finishes well under
 # the ~5-minute build budget, and re-running it is safe (idempotent).
 #
 # Managed by the agent_vm_tunnel gem; re-run `rails g agent_vm_tunnel:install`
-# to regenerate.
+# to regenerate. It's yours to edit — tweak the database or Ruby steps to match
+# your app.
 set -euo pipefail
 
-# Ruby version comes from .ruby-version (e.g. "ruby-4.0.3" -> "4.0.3").
-RUBY_VERSION="$(sed -e 's/^ruby-//' -e 's/[[:space:]]//g' .ruby-version 2>/dev/null)"
-RUBY_VERSION="${RUBY_VERSION:-4.0.3}"
-
 # --- Ruby: prebuilt ruby-builder tarball (no compile; a few seconds) -----------
-# The tarball wraps an "x64/" dir, so it extracts to .../Ruby/<ver>/x64/bin/ruby.
-# This is the GitHub Actions hostedtoolcache layout the build is compiled for.
-RUBY_PREFIX="/opt/hostedtoolcache/Ruby/${RUBY_VERSION}"
-if [ ! -x "${RUBY_PREFIX}/x64/bin/ruby" ]; then
-  mkdir -p "${RUBY_PREFIX}"
-  curl -fsSL "https://github.com/ruby/ruby-builder/releases/download/ruby-${RUBY_VERSION}/ruby-${RUBY_VERSION}-ubuntu-24.04-x64.tar.gz" \
-    | tar -xz -C "${RUBY_PREFIX}"
+# Version comes from .ruby-version (e.g. "ruby-3.4.2" -> "3.4.2"). The tarball
+# wraps an "x64/" dir, so it extracts to .../Ruby/<ver>/x64/bin/ruby — the GitHub
+# Actions hostedtoolcache layout this VM uses. Without a .ruby-version we fall
+# back to whatever ruby is already on PATH.
+RUBY_VERSION="$(sed -e 's/^ruby-//' -e 's/[[:space:]]//g' .ruby-version 2>/dev/null || true)"
+if [ -n "${RUBY_VERSION}" ]; then
+  RUBY_PREFIX="/opt/hostedtoolcache/Ruby/${RUBY_VERSION}"
+  if [ ! -x "${RUBY_PREFIX}/x64/bin/ruby" ]; then
+    mkdir -p "${RUBY_PREFIX}"
+    curl -fsSL "https://github.com/ruby/ruby-builder/releases/download/ruby-${RUBY_VERSION}/ruby-${RUBY_VERSION}-ubuntu-24.04-x64.tar.gz" \
+      | tar -xz -C "${RUBY_PREFIX}"
+  fi
+  export PATH="${RUBY_PREFIX}/x64/bin:${PATH}"   # for the bundle/db steps below
+else
+  echo "No .ruby-version found — using the Ruby already on PATH: $(ruby --version 2>/dev/null || echo 'none')."
 fi
-export PATH="${RUBY_PREFIX}/x64/bin:${PATH}"   # for the bundle/db steps below
 # NOTE: the cloud VM restores /usr/local/bin from its base image every session
-# (it ships ruby pinned there), so making this Ruby the default has to happen at
-# session start, not here — bin/preview re-points the /usr/local/bin symlinks on
-# each SessionStart hook. This export is just for the bundle install / db:prepare
-# steps in this script.
+# (it ships an older ruby pinned there), so making this Ruby the default has to
+# happen at session start, not here — bin/preview re-points the /usr/local/bin
+# symlinks on each SessionStart hook. This export is just for the steps below.
 ruby --version
 
-# --- PostgreSQL ---------------------------------------------------------------
-# The app connects over the local socket as the OS user (root on the VM), so it
-# needs a Postgres superuser role named "root".
-apt-get update -qq
-apt-get install -y -qq postgresql
-service postgresql start
-su - postgres -c "createuser -s root" 2>/dev/null || true   # idempotent
+# --- Database -----------------------------------------------------------------
+# Provision only what the app's adapter needs, read from the lockfile (which is
+# already resolved, unlike an ERB/env-driven database.yml). SQLite — the Rails
+# default — needs no server at all; db:prepare just creates the file.
+db_gem="$(grep -oE '^ +(pg|mysql2|trilogy|sqlite3) ' Gemfile.lock 2>/dev/null | awk '{print $1}' | head -1)"
+case "${db_gem}" in
+  pg)
+    apt-get update -qq
+    apt-get install -y -qq postgresql
+    service postgresql start
+    # The app connects over the local socket as the OS user (root on the VM), so
+    # it needs a matching Postgres superuser role.
+    su - postgres -c "createuser -s $(whoami)" 2>/dev/null || true
+    ;;
+  mysql2 | trilogy)
+    apt-get update -qq
+    apt-get install -y -qq mariadb-server
+    service mariadb start
+    # MariaDB's root uses unix_socket auth, so a socket connection as root works.
+    # If your database.yml uses a different user, add it here.
+    ;;
+  sqlite3 | "")
+    : # SQLite or none detected — no database server to install.
+    ;;
+  *)
+    echo "Unrecognized database gem '${db_gem}'; skipping DB server install. Edit this script if it needs one."
+    ;;
+esac
 
 # --- App: gems + database -----------------------------------------------------
 bundle install
@@ -65,8 +90,9 @@ cat <<'EOF'
 Cloud VM ready.
   Start the app:  bin/dev
   Preview it:     the VM has no port-forwarding, so previews go through a chisel
-                  reverse tunnel (Agent VM Tunnel). Claim a slot on the tunnel
-                  dashboard and set the one value it shows as a Cloud VM secret:
+                  reverse tunnel (Agent VM Tunnel). Create a preview for this app
+                  on the tunnel dashboard and set the value it shows as a Cloud VM
+                  secret:
                     AGENT_VM_TUNNEL=NN:pass
                   After that it's automatic — bin/preview runs on session start
                   and each turn to keep the app + tunnel up. Open the preview URL

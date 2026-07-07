@@ -61,11 +61,20 @@ SLOT_NN="${AGENT_VM_TUNNEL%%:*}"; PASS="${AGENT_VM_TUNNEL#*:}"
   echo "[preview] AGENT_VM_TUNNEL must look like N:pass (slot number, colon, password) — got something else; skipping." >&2; exit 0; }
 PORT=$((20000 + 10#$SLOT_NN)); CHISEL_USER="slot${SLOT_NN}"
 
-# --- 1. Postgres --------------------------------------------------------------
-if ! pg_isready -q 2>/dev/null; then
-  (service postgresql start || sudo -n service postgresql start) >/dev/null 2>&1 || true
-  started+=("postgres")
-fi
+# --- 1. Database daemon (SQLite needs none; read the adapter from the lockfile)
+db_gem="$(grep -oE '^ +(pg|mysql2|trilogy) ' Gemfile.lock 2>/dev/null | awk '{print $1}' | head -1)"
+case "$db_gem" in
+  pg)
+    if ! pg_isready -q 2>/dev/null; then
+      (service postgresql start || sudo -n service postgresql start) >/dev/null 2>&1 || true
+      started+=("postgres")
+    fi ;;
+  mysql2|trilogy)
+    if ! mysqladmin ping -s >/dev/null 2>&1; then
+      (service mariadb start || sudo -n service mariadb start) >/dev/null 2>&1 || true
+      started+=("mariadb")
+    fi ;;
+esac
 
 # --- 2. Rails app on :3000 ----------------------------------------------------
 if ! curl -fsS -o /dev/null --max-time 2 "http://localhost:${APP_PORT}" 2>/dev/null; then

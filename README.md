@@ -6,9 +6,10 @@ Public live-preview URLs for Rails apps you build inside a **Claude Cloud VM**
 A Cloud VM has no port-forwarding and its egress is a TLS-intercepting proxy, so
 you can't just open `localhost:3000` in a browser, and `cloudflared`/`ngrok`
 don't get through. This gem exposes your running dev server at
-`https://<your-github-login>.firstdraft.io` through a self-hosted
+`https://<you>-<app>.firstdraft.io` through a self-hosted
 [chisel](https://github.com/jpillora/chisel) reverse tunnel (WebSocket over 443,
-which the proxy *does* forward).
+which the proxy *does* forward). Each app you build gets its own preview URL and
+its own credential.
 
 Two moving parts, both installed for you:
 
@@ -50,18 +51,18 @@ settings are left alone.
 
 ## Use it (Claude Cloud VM)
 
-1. **Claim a slot** at <https://firstdraft.io> and copy the one line it shows:
+1. **Create a preview for this app** at <https://firstdraft.io> (one per app —
+   name it, e.g. `blog`) and copy the one line it shows:
    `AGENT_VM_TUNNEL=<slot>:<password>`.
 2. In your Cloud VM (**claude.ai/code → Add cloud environment**):
    - **Setup script** → point it at this repo's `cloud-vm-setup.sh`
-   - **Environment variables** → paste the `AGENT_VM_TUNNEL` line (persists across sessions)
+   - **Environment variables** → paste that app's `AGENT_VM_TUNNEL` line (persists across sessions)
    - **Network access** → **Full** (the tunnel needs unrestricted egress; *Trusted* blocks it)
 3. **Start a session.** The hooks run `bin/preview` every turn, so the app +
-   tunnel come up on their own. Open `https://<your-github-login>.firstdraft.io`.
+   tunnel come up on their own. Open `https://<you>-<app>.firstdraft.io`.
 
-Run `bin/preview` by hand any time to force a (re)start. Your preview URL is
-public (it's your username) — turn on Basic Auth from the dashboard if you want
-a lock on it.
+Run `bin/preview` by hand any time to force a (re)start. The preview URL is
+public — turn on Basic Auth from the dashboard if you want a lock on it.
 
 ## Configuration
 
@@ -120,8 +121,11 @@ only applies in the environments you list.
 ## Requirements
 
 - Rails 7.0+ (Railtie + generator via `railties`)
-- Ruby 3.2+
-- A Postgres-backed app whose `bin/dev` (or `bin/rails server`) listens on `:3000`
+- Ruby 3.2+ (the app's own version is read from `.ruby-version`)
+- An app whose `bin/dev` (or `bin/rails server`) listens on `:3000` (override
+  with `APP_PORT`). SQLite, PostgreSQL, and MySQL/MariaDB all work — the
+  generated `cloud-vm-setup.sh` detects the adapter from your lockfile and
+  provisions accordingly (SQLite needs no server).
 
 ## Development
 
