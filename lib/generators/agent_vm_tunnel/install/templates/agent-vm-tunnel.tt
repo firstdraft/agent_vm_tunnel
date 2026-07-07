@@ -66,7 +66,7 @@ spawn() { setsid bash -c "$1" </dev/null >>"$2" 2>&1 & }
 [ -n "${AGENT_VM_TUNNEL:-}" ] || exit 0
 SLOT_NN="${AGENT_VM_TUNNEL%%:*}"; PASS="${AGENT_VM_TUNNEL#*:}"
 { [ "$SLOT_NN" != "$AGENT_VM_TUNNEL" ] && [ -n "$PASS" ] && [[ "$SLOT_NN" =~ ^[0-9]{1,4}$ ]]; } || {
-  echo "[preview] AGENT_VM_TUNNEL must look like N:pass (slot number, colon, password) — got something else; skipping." >&2; exit 0; }
+  echo "[agent-vm-tunnel] AGENT_VM_TUNNEL must look like N:pass (slot number, colon, password) — got something else; skipping." >&2; exit 0; }
 PORT=$((20000 + 10#$SLOT_NN)); CHISEL_USER="slot${SLOT_NN}"
 
 # --- 1. Database daemon (SQLite needs none; read the adapter from the lockfile)
@@ -101,7 +101,7 @@ fi
 # --- 4. the tunnel ------------------------------------------------------------
 if ! pgrep -f "chisel client" >/dev/null 2>&1; then
   if ! fetch_coordinates; then
-    echo "[preview] couldn't learn the tunnel fingerprint (https://<%= host %>/tunnel unreachable); app is up, tunnel skipped this turn." >&2
+    echo "[agent-vm-tunnel] couldn't learn the tunnel fingerprint (https://<%= host %>/tunnel unreachable); app is up, tunnel skipped this turn." >&2
   fi
 fi
 if [ -n "$FINGERPRINT" ] && ! pgrep -f "chisel client" >/dev/null 2>&1; then
@@ -116,6 +116,6 @@ fi
 
 # --- speak only if we did something ------------------------------------------
 if [ "${#started[@]}" -gt 0 ]; then
-  echo "[preview] slot ${SLOT_NN}: (re)started ${started[*]}. Your dashboard preview URL will be live in a few seconds."
+  echo "[agent-vm-tunnel] slot ${SLOT_NN}: (re)started ${started[*]}. Your dashboard preview URL will be live in a few seconds."
 fi
 exit 0
