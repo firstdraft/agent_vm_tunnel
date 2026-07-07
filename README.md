@@ -16,7 +16,7 @@ Two moving parts, both installed for you:
 - a **Railtie** that allows the tunnel's hosts and Action Cable origins, so
   tunneled page loads and Turbo Streams / live reload aren't rejected — no
   editing of `config/environments`.
-- a **keep-alive script** (`bin/preview`) plus **Claude Code hooks** that bring
+- a **keep-alive script** (`bin/agent-vm-tunnel`) plus **Claude Code hooks** that bring
   Postgres + the app + the tunnel up on session start and every turn, and
   self-heal after the VM reaps them on idle.
 
@@ -42,9 +42,9 @@ The generator adds:
 
 | File | What it's for |
 |---|---|
-| `bin/preview` | Idempotent keep-alive: Postgres + the app + the chisel tunnel |
+| `bin/agent-vm-tunnel` | Idempotent keep-alive: Postgres + the app + the chisel tunnel |
 | `cloud-vm-setup.sh` | One-shot Cloud VM provisioning (Ruby, Postgres, gems, chisel) |
-| `.claude/settings.json` | `SessionStart` + `UserPromptSubmit` hooks that run `bin/preview` |
+| `.claude/settings.json` | `SessionStart` + `UserPromptSubmit` hooks that run `bin/agent-vm-tunnel` |
 
 It **merges** into an existing `.claude/settings.json` — your other hooks and
 settings are left alone.
@@ -58,10 +58,10 @@ settings are left alone.
    - **Setup script** → point it at this repo's `cloud-vm-setup.sh`
    - **Environment variables** → paste that app's `AGENT_VM_TUNNEL` line (persists across sessions)
    - **Network access** → **Full** (the tunnel needs unrestricted egress; *Trusted* blocks it)
-3. **Start a session.** The hooks run `bin/preview` every turn, so the app +
+3. **Start a session.** The hooks run `bin/agent-vm-tunnel` every turn, so the app +
    tunnel come up on their own. Open `https://<you>-<app>.firstdraft.io`.
 
-Run `bin/preview` by hand any time to force a (re)start. The preview URL is
+Run `bin/agent-vm-tunnel` by hand any time to force a (re)start. The preview URL is
 public — turn on Basic Auth from the dashboard if you want a lock on it.
 
 ## Configuration
@@ -72,7 +72,7 @@ configure to use it.
 ### Point at your own tunnel box
 
 If you run your own [agent-vm-tunnel](https://github.com/firstdraft/agent-vm-tunnel)
-server, set the host once — the generator bakes it into `bin/preview` and
+server, set the host once — the generator bakes it into `bin/agent-vm-tunnel` and
 `cloud-vm-setup.sh`:
 
 ```bash
@@ -117,6 +117,32 @@ config.action_cable.allowed_request_origins = [
 
 except it merges with (rather than replaces) any origins already configured, and
 only applies in the environments you list.
+
+## Slow VM setup? Vendor your gems
+
+The Cloud VM runs `cloud-vm-setup.sh` under a **~5-minute build budget**.
+Installing Ruby is quick (a prebuilt tarball); the variable is `bundle install` —
+a large Gemfile that fetches and compiles native extensions over the network can
+blow the budget. If it does, vendor your gems so the install is offline and mostly
+precompiled.
+
+The VM is `x86_64-linux`, which is probably not your machine's platform, so add it
+to the lockfile and cache every platform's gems:
+
+```bash
+bundle lock --add-platform x86_64-linux
+bundle cache --all-platforms          # writes .gem files into vendor/cache
+git add -f Gemfile.lock vendor/cache
+```
+
+Commit that, and `bundle install` on the VM installs from `vendor/cache` with no
+downloads — and no compilation for gems that ship precompiled `x86_64-linux`
+builds, which most popular native gems (nokogiri, sqlite3, …) do.
+
+For the absolute minimum VM time you can go further and commit a fully-installed
+`vendor/bundle` built on a Linux machine (zero install on the VM), but that's
+heavier to produce and keep in sync — reach for it only if `vendor/cache` isn't
+enough.
 
 ## Requirements
 

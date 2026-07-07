@@ -34,7 +34,7 @@ else
 fi
 # NOTE: the cloud VM restores /usr/local/bin from its base image every session
 # (it ships an older ruby pinned there), so making this Ruby the default has to
-# happen at session start, not here — bin/preview re-points the /usr/local/bin
+# happen at session start, not here — bin/agent-vm-tunnel re-points the /usr/local/bin
 # symlinks on each SessionStart hook. This export is just for the steps below.
 ruby --version
 
@@ -71,11 +71,25 @@ esac
 bundle install
 bin/rails db:prepare
 
+# --- JavaScript deps (only if the app bundles JS) -----------------------------
+# importmap apps (the Rails default) have no package.json and need nothing here.
+# jsbundling/cssbundling apps (esbuild, Vite, Tailwind-via-Node) need node_modules
+# before bin/dev's build step runs. The cloud VM preinstalls Node (npm/yarn/pnpm),
+# so this just runs the install; the guard keeps it safe on any other environment.
+if [ -f package.json ]; then
+  if command -v npm >/dev/null 2>&1; then
+    npm install --no-audit --no-fund
+  else
+    echo "package.json is present but 'npm' isn't on PATH. Add a Node install" \
+         "step here (e.g. apt-get install -y nodejs npm) if your app needs a JS build."
+  fi
+fi
+
 # --- chisel client: preview the dev server through the tunnel -----------------
 # The VM has no port-forwarding, and its egress is a TLS-intercepting proxy that
 # blocks cloudflared (needs port 7844) and ngrok (cert pinning). A chisel
 # WebSocket tunnel over 443 to tunnel.<%= host %> does get through, so we install
-# the chisel client here. bin/preview supplies the coordinates (baked + refreshed
+# the chisel client here. bin/agent-vm-tunnel supplies the coordinates (baked + refreshed
 # from https://<%= host %>/tunnel) and your slot's auth.
 CHISEL_VERSION="1.11.5"
 if ! command -v chisel >/dev/null 2>&1; then
@@ -94,7 +108,7 @@ Cloud VM ready.
                   on the tunnel dashboard and set the value it shows as a Cloud VM
                   secret:
                     AGENT_VM_TUNNEL=NN:pass
-                  After that it's automatic — bin/preview runs on session start
+                  After that it's automatic — bin/agent-vm-tunnel runs on session start
                   and each turn to keep the app + tunnel up. Open the preview URL
-                  the dashboard gave you. (Run bin/preview by hand to force it.)
+                  the dashboard gave you. (Run bin/agent-vm-tunnel by hand to force it.)
 EOF

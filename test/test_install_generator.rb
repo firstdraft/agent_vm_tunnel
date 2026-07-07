@@ -13,17 +13,17 @@ class InstallGeneratorTest < Rails::Generators::TestCase
 
   def test_creates_executable_preview_with_default_host
     run_generator
-    assert_file "bin/preview" do |content|
+    assert_file "bin/agent-vm-tunnel" do |content|
       assert_match "https://tunnel.firstdraft.io", content
       assert_match "https://firstdraft.io/tunnel", content
       assert_match InstallGeneratorTest.generator_class::FIRSTDRAFT_FINGERPRINT, content
     end
-    assert File.executable?(File.join(destination_root, "bin/preview")), "bin/preview should be +x"
+    assert File.executable?(File.join(destination_root, "bin/agent-vm-tunnel")), "bin/agent-vm-tunnel should be +x"
   end
 
   def test_honors_custom_host_and_blanks_unknown_fingerprint
     run_generator ["--host=preview.example.com"]
-    assert_file "bin/preview" do |content|
+    assert_file "bin/agent-vm-tunnel" do |content|
       assert_match "https://tunnel.preview.example.com", content
       assert_match "https://preview.example.com/tunnel", content
       assert_match(/FINGERPRINT=""/, content)
@@ -32,7 +32,7 @@ class InstallGeneratorTest < Rails::Generators::TestCase
 
   def test_accepts_explicit_fingerprint
     run_generator ["--host=preview.example.com", "--fingerprint=ABC123="]
-    assert_file "bin/preview", /FINGERPRINT="ABC123="/
+    assert_file "bin/agent-vm-tunnel", /FINGERPRINT="ABC123="/
   end
 
   def test_creates_cloud_vm_setup_script
@@ -63,7 +63,7 @@ class InstallGeneratorTest < Rails::Generators::TestCase
 
   def test_preview_only_starts_a_daemon_for_server_databases
     run_generator
-    assert_file "bin/preview" do |content|
+    assert_file "bin/agent-vm-tunnel" do |content|
       assert_match(/db_gem=/, content)
       assert_match(/pg\)/, content)
     end
@@ -74,7 +74,7 @@ class InstallGeneratorTest < Rails::Generators::TestCase
     assert_file ".claude/settings.json" do |content|
       json = JSON.parse(content)
       %w[SessionStart UserPromptSubmit].each do |event|
-        assert runs_preview?(json.dig("hooks", event)), "#{event} should run bin/preview"
+        assert runs_preview?(json.dig("hooks", event)), "#{event} should run bin/agent-vm-tunnel"
       end
     end
   end
@@ -98,7 +98,7 @@ class InstallGeneratorTest < Rails::Generators::TestCase
       # the pre-existing SessionStart hook is preserved AND ours is added
       commands = json.dig("hooks", "SessionStart").flat_map { |g| g["hooks"].map { |h| h["command"] } }
       assert_includes commands, "echo hi"
-      assert_includes commands, "bin/preview"
+      assert_includes commands, "bin/agent-vm-tunnel"
       # UserPromptSubmit gets added fresh
       assert runs_preview?(json.dig("hooks", "UserPromptSubmit"))
     end
@@ -115,6 +115,6 @@ class InstallGeneratorTest < Rails::Generators::TestCase
   private
 
   def runs_preview?(groups)
-    Array(groups).any? { |g| Array(g["hooks"]).any? { |h| h["command"].to_s.include?("bin/preview") } }
+    Array(groups).any? { |g| Array(g["hooks"]).any? { |h| h["command"].to_s.include?("bin/agent-vm-tunnel") } }
   end
 end

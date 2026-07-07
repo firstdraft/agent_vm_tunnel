@@ -31,6 +31,14 @@ for rb in /opt/hostedtoolcache/Ruby/*/x64/bin; do
   ln -sf "$rb/"* /usr/local/bin/ 2>/dev/null || true
   case ":$PATH:" in *":$rb:"*) ;; *) PATH="$rb:$PATH";; esac
 done
+# The base image ships Node under /opt/node<NN>, but only node/npm are symlinked
+# into /usr/local/bin (to an older version) — yarn/pnpm live only in /opt/node<NN>/bin.
+# Put the newest full toolchain on PATH so a jsbundling app's bin/dev build step
+# finds node/npm/yarn/pnpm. No-op off the cloud VM.
+for nb in /opt/node*/bin; do
+  [ -x "$nb/node" ] || continue
+  case ":$PATH:" in *":$nb:"*) ;; *) PATH="$nb:$PATH";; esac
+done
 export PATH
 
 # Tunnel coordinates: baked defaults, refreshed from the control app (public
