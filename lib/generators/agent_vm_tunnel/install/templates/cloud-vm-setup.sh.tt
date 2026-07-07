@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Setup script for the Claude cloud VM (claude.ai/code).
+#
+# The cloud VM is Ubuntu 24.04 (x86_64), runs as root, ships no Ruby, and has no
+# port-forwarding. This installs Ruby + Postgres + the app's gems, plus the chisel
+# client for previewing the running server through a reverse tunnel. `claude`
+# itself is already present (the VM *is* Claude Code), so it is not installed here.
+#
+# Point the cloud environment's setup script at this file. It finishes well under
+# the ~5-minute build budget, and re-running it is safe (idempotent).
+#
+# Managed by the agent_vm_tunnel gem; re-run `rails g agent_vm_tunnel:install`
+# to regenerate.
+set -euo pipefail
+
+# Ruby version comes from .ruby-version (e.g. "ruby-4.0.3" -> "4.0.3").
+RUBY_VERSION="$(sed -e 's/^ruby-//' -e 's/[[:space:]]//g' .ruby-version 2>/dev/null)"
+RUBY_VERSION="${RUBY_VERSION:-4.0.3}"
+
+# --- Ruby: prebuilt ruby-builder tarball (no compile; a few seconds) -----------
+# The tarball wraps an "x64/" dir, so it extracts to .../Ruby/<ver>/x64/bin/ruby.
+# This is the GitHub Actions hostedtoolcache layout the build is compiled for.
+RUBY_PREFIX="/opt/hostedtoolcache/Ruby/${RUBY_VERSION}"
+if [ ! -x "${RUBY_PREFIX}/x64/bin/ruby" ]; then
+  mkdir -p "${RUBY_PREFIX}"
+  curl -fsSL "https://github.com/ruby/ruby-builder/releases/download/ruby-${RUBY_VERSION}/ruby-${RUBY_VERSION}-ubuntu-24.04-x64.tar.gz" \
+    | tar -xz -C "${RUBY_PREFIX}"
+fi
+export PATH="${RUBY_PREFIX}/x64/bin:${PATH}"   # for the bundle/db steps below
+# NOTE: the cloud VM restores /usr/local/bin from its base image every session
+# (it ships ruby pinned there), so making this Ruby the default has to happen at
+# session start, not here — bin/preview re-points the /usr/local/bin symlinks on
+# each SessionStart hook. This export is just for the bundle install / db:prepare
+# steps in this script.
+ruby --version
+
+# --- PostgreSQL ---------------------------------------------------------------
+# The app connects over the local socket as the OS user (root on the VM), so it
+# needs a Postgres superuser role named "root".
+apt-get update -qq
+apt-get install -y -qq postgresql
+service postgresql start
+su - postgres -c "createuser -s root" 2>/dev/null || true   # idempotent
+
+# --- App: gems + database -----------------------------------------------------
+bundle install
+bin/rails db:prepare
+
+# --- chisel client: preview the dev server through the tunnel -----------------
+# The VM has no port-forwarding, and its egress is a TLS-intercepting proxy that
+# blocks cloudflared (needs port 7844) and ngrok (cert pinning). A chisel
+# WebSocket tunnel over 443 to tunnel.<%= host %> does get through, so we install
+# the chisel client here. bin/preview supplies the coordinates (baked + refreshed
+# from https://<%= host %>/tunnel) and your slot's auth.
+CHISEL_VERSION="1.11.5"
+if ! command -v chisel >/dev/null 2>&1; then
+  curl -fsSL "https://github.com/jpillora/chisel/releases/download/v${CHISEL_VERSION}/chisel_${CHISEL_VERSION}_linux_amd64.gz" \
+    | gunzip > /usr/local/bin/chisel
+  chmod +x /usr/local/bin/chisel
+fi
+chisel --version
+
+cat <<'EOF'
+
+Cloud VM ready.
+  Start the app:  bin/dev
+  Preview it:     the VM has no port-forwarding, so previews go through a chisel
+                  reverse tunnel (Agent VM Tunnel). Claim a slot on the tunnel
+                  dashboard and set the one value it shows as a Cloud VM secret:
+                    AGENT_VM_TUNNEL=NN:pass
+                  After that it's automatic — bin/preview runs on session start
+                  and each turn to keep the app + tunnel up. Open the preview URL
+                  the dashboard gave you. (Run bin/preview by hand to force it.)
+EOF

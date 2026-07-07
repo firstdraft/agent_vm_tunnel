@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Bring up — and keep up — your live preview: Postgres + the Rails app + the
+# Agent VM Tunnel. Idempotent and quiet: if everything is already running it
+# prints nothing and exits. Cloud VMs reap background processes on idle, so the
+# SessionStart / UserPromptSubmit hooks (see .claude/settings.json) call this
+# every turn to auto-heal the preview. You can also run it by hand any time.
+#
+# Set ONE secret from the tunnel dashboard at https://<%= host %>
+# (persists across sessions):
+#   AGENT_VM_TUNNEL=<slot>:<password>     (Cloud VM → Settings → Secrets / env)
+#
+# Managed by the agent_vm_tunnel gem; re-run `rails g agent_vm_tunnel:install`
+# to regenerate.
+set -uo pipefail   # intentionally not -e: attempt all three even if one hiccups
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
+LOGDIR="$ROOT/tmp"; mkdir -p "$LOGDIR"
+APP_PORT="${APP_PORT:-3000}"
+
+# Point ruby/bundle/rails at the Ruby this app needs (installed by
+# cloud-vm-setup.sh into the hostedtoolcache layout). The cloud VM's base image
+# symlinks /usr/local/bin/{ruby,gem,bundle,...} to an older Ruby and restores
+# that base layer every session, so a one-time symlink at setup doesn't survive
+# — we re-point them here instead. This hook runs at SessionStart (as root,
+# before any work), so the fix is in place for the interactive shell and for the
+# agent's commands too — without it `bundle`/`rails` hit Bundler::GemNotFound.
+# Also prepend to PATH (exported) so the detached bin/dev below inherits it even
+# if /usr/local/bin isn't writable.
+for rb in /opt/hostedtoolcache/Ruby/*/x64/bin; do
+  [ -x "$rb/ruby" ] || continue
+  ln -sf "$rb/"* /usr/local/bin/ 2>/dev/null || true
+  case ":$PATH:" in *":$rb:"*) ;; *) PATH="$rb:$PATH";; esac
+done
+export PATH
+
+# Tunnel coordinates: baked defaults, refreshed from the control app (public
+# GET /tunnel) only when the tunnel actually needs (re)starting, so a healthy
+# turn stays network-free and a box rebuild never orphans clients.
+CONNECT_URL="https://tunnel.<%= host %>"
+FINGERPRINT="<%= fingerprint %>"   # fallback; fetch_coordinates refreshes it before a tunnel (re)start
+CHISEL_VERSION="1.11.5"
+fetch_coordinates() {
+  local coords url fp
+  coords="$(curl -fsS --max-time 5 https://<%= host %>/tunnel 2>/dev/null)" || return 1
+  url="$(printf '%s' "$coords" | grep -o '"connect_url":"[^"]*"' | cut -d'"' -f4)"
+  fp="$(printf '%s' "$coords" | grep -o '"fingerprint":"[^"]*"' | cut -d'"' -f4)"
+  [ -n "$url" ] && CONNECT_URL="$url"
+  [ -n "$fp" ] && FINGERPRINT="$fp"
+  [ -n "$FINGERPRINT" ]
+}
+
+started=()   # collect what we (re)launched; stay silent if nothing
+
+# detach a long-lived process so it survives this script (and the hook) exiting
+spawn() { setsid bash -c "$1" </dev/null >>"$2" 2>&1 & }
+
+# --- 0. need the one secret; quiet no-op if unset/malformed -------------------
+[ -n "${AGENT_VM_TUNNEL:-}" ] || exit 0
+SLOT_NN="${AGENT_VM_TUNNEL%%:*}"; PASS="${AGENT_VM_TUNNEL#*:}"
+{ [ "$SLOT_NN" != "$AGENT_VM_TUNNEL" ] && [ -n "$PASS" ] && [[ "$SLOT_NN" =~ ^[0-9]{1,4}$ ]]; } || {
+  echo "[preview] AGENT_VM_TUNNEL must look like N:pass (slot number, colon, password) — got something else; skipping." >&2; exit 0; }
+PORT=$((20000 + 10#$SLOT_NN)); CHISEL_USER="slot${SLOT_NN}"
+
+# --- 1. Postgres --------------------------------------------------------------
+if ! pg_isready -q 2>/dev/null; then
+  (service postgresql start || sudo -n service postgresql start) >/dev/null 2>&1 || true
+  started+=("postgres")
+fi
+
+# --- 2. Rails app on :3000 ----------------------------------------------------
+if ! curl -fsS -o /dev/null --max-time 2 "http://localhost:${APP_PORT}" 2>/dev/null; then
+  if [ -x bin/dev ]; then spawn "exec bin/dev" "$LOGDIR/preview-app.log"
+  else spawn "exec bin/rails server -b 0.0.0.0 -p ${APP_PORT}" "$LOGDIR/preview-app.log"; fi
+  started+=("app")
+fi
+
+# --- 3. chisel binary (install once if missing) ------------------------------
+if ! command -v chisel >/dev/null 2>&1; then
+  case "$(uname -m)" in x86_64) GOARCH=amd64;; aarch64|arm64) GOARCH=arm64;; *) GOARCH=amd64;; esac
+  curl -fsSL "https://github.com/jpillora/chisel/releases/download/v${CHISEL_VERSION}/chisel_${CHISEL_VERSION}_linux_${GOARCH}.gz" \
+    | gunzip > /usr/local/bin/chisel 2>/dev/null && chmod +x /usr/local/bin/chisel || true
+fi
+
+# --- 4. the tunnel ------------------------------------------------------------
+if ! pgrep -f "chisel client" >/dev/null 2>&1; then
+  if ! fetch_coordinates; then
+    echo "[preview] couldn't learn the tunnel fingerprint (https://<%= host %>/tunnel unreachable); app is up, tunnel skipped this turn." >&2
+  fi
+fi
+if [ -n "$FINGERPRINT" ] && ! pgrep -f "chisel client" >/dev/null 2>&1; then
+  PROXY="${HTTPS_PROXY:-${https_proxy:-}}"; PROXY_ARG=""; [ -n "$PROXY" ] && PROXY_ARG="--proxy '$PROXY'"
+  CA_ARG=""; for ca in "${CHISEL_CA:-}" /root/.ccr/ca-bundle.crt; do
+    [ -n "$ca" ] && [ -f "$ca" ] && { CA_ARG="--tls-ca '$ca'"; break; }; done
+  spawn "exec chisel client --fingerprint '$FINGERPRINT' --auth '${CHISEL_USER}:${PASS}' \
+         --keepalive 25s --max-retry-count -1 $CA_ARG $PROXY_ARG \
+         '$CONNECT_URL' 'R:127.0.0.1:${PORT}:localhost:${APP_PORT}'" "$LOGDIR/preview-tunnel.log"
+  started+=("tunnel")
+fi
+
+# --- speak only if we did something ------------------------------------------
+if [ "${#started[@]}" -gt 0 ]; then
+  echo "[preview] slot ${SLOT_NN}: (re)started ${started[*]}. Your dashboard preview URL will be live in a few seconds."
+fi
+exit 0
