@@ -56,8 +56,19 @@ settings are left alone.
    sent you, sign in with GitHub at <https://firstdraft.io>, and create a preview
    for this app (one per app — name it, e.g. `blog`). Copy the one line it shows:
    `AGENT_VM_TUNNEL=<slot>:<password>`.
-2. In your Cloud VM (**claude.ai/code → Add cloud environment**):
-   - **Setup script** → point it at this repo's `cloud-vm-setup.sh`
+2. In your Cloud VM (**claude.ai/code → Add cloud environment**), set three fields:
+   - **Setup script** → paste this. The field runs at build time and may not start
+     in your repo's directory, so it finds the repo first, then runs the generated
+     `cloud-vm-setup.sh`:
+     ```bash
+     #!/bin/bash
+     set -e
+     repo="${CLAUDE_PROJECT_DIR:-}"
+     [ -f "$repo/cloud-vm-setup.sh" ] || repo="$(find / -maxdepth 6 -name cloud-vm-setup.sh -printf '%h\n' 2>/dev/null | head -n1)"
+     cd "$repo"
+     bash cloud-vm-setup.sh
+     ```
+     (The dashboard shows this same snippet with a **Copy** button.)
    - **Environment variables** → paste that app's `AGENT_VM_TUNNEL` line (persists across sessions)
    - **Network access** → **Full** (the tunnel needs unrestricted egress; *Trusted* blocks it)
 3. **Start a session.** The hooks run `bin/agent-vm-tunnel` every turn, so the app +
