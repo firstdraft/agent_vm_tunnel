@@ -128,10 +128,12 @@ start_owned() {
   stop_owned "$name"
   rotate_log "$logfile"
   if command -v setsid >/dev/null 2>&1; then
-    setsid env "AGENT_VM_TUNNEL_OWNER=$OWNER:$name" "$@" </dev/null >>"$logfile" 2>&1 &
+    # Background children must not inherit the flock descriptor. Otherwise the
+    # lock remains held for the lifetime of the app/tunnel after ensure exits.
+    setsid env "AGENT_VM_TUNNEL_OWNER=$OWNER:$name" "$@" 9>&- </dev/null >>"$logfile" 2>&1 &
     grouped=yes
   else
-    nohup env "AGENT_VM_TUNNEL_OWNER=$OWNER:$name" "$@" </dev/null >>"$logfile" 2>&1 &
+    nohup env "AGENT_VM_TUNNEL_OWNER=$OWNER:$name" "$@" 9>&- </dev/null >>"$logfile" 2>&1 &
   fi
   pid=$!
   printf '%s\n' "$pid" >"$(pid_file "$name").tmp"

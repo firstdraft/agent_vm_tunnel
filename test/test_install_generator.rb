@@ -132,6 +132,8 @@ class InstallGeneratorTest < Rails::Generators::TestCase
     connector = File.read(File.join(destination_root, "bin/agent-vm-tunnel"))
     refute_includes connector, "bash -c"
     refute_includes connector, "pgrep"
+    assert_operator connector.scan("9>&-").length, :>=, 2,
+      "owned background processes must close the reconciliation lock descriptor"
   end
 
   private
