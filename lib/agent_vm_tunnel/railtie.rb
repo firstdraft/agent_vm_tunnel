@@ -5,9 +5,9 @@ require "rails"
 module AgentVmTunnel
   # Teaches a host Rails app to accept tunnel traffic without any hand-editing of
   # config/environments: it allows the tunnel's wildcard host (so host
-  # authorization doesn't return "Blocked hosts") and its Action Cable origins
-  # (so Turbo Streams / live reload over the tunnel aren't silently rejected).
-  # Only the environments in the configuration are touched.
+  # authorization doesn't return "Blocked hosts"). Action Cable already allows
+  # exact same-origin connections; only explicit application-provided origin
+  # exceptions are merged. Only configured environments are touched.
   class Railtie < ::Rails::Railtie
     # `config.hosts` is consumed when the middleware stack is assembled, so the
     # allowed host has to be in place before that — hence `before:

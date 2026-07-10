@@ -15,10 +15,9 @@ module AgentVmTunnel
     class InstallGenerator < ::Rails::Generators::Base
       source_root File.expand_path("templates", __dir__)
 
-      # The public fingerprint of the default firstdraft.io tunnel. Baked in as a
-      # fallback so the very first connect works even if the coordinates
-      # endpoint is briefly unreachable; bin/agent-vm-tunnel refreshes it from
-      # https://<host>/tunnel on each (re)start.
+      # The public fingerprint of the default firstdraft.io tunnel. This remains
+      # an independent pin: the coordinates endpoint may move the HTTPS URL but
+      # is never allowed to replace the server key.
       FIRSTDRAFT_FINGERPRINT = "qiHyU1ZKorF5AHUy5GrhYSemXAGaFbIYb9a1wWvZxIk="
 
       class_option :host, type: :string, default: AgentVmTunnel::Configuration::DEFAULT_HOST,
@@ -82,10 +81,7 @@ module AgentVmTunnel
           Next:
             1. Claim a slot at https://#{options[:host]} and copy the one
                AGENT_VM_TUNNEL=<slot>:<password> value it shows you.
-            2. In your Claude Cloud VM (claude.ai/code → Add cloud environment):
-               • Setup script → run this repo's cloud-vm-setup.sh
-               • Environment variables → paste the AGENT_VM_TUNNEL value
-               • Network access → Full (the tunnel needs unrestricted egress)
+            2. #{provider_setup_step}
             3. #{provider_next_step}
 
           Run bin/agent-vm-tunnel by hand any time to force a (re)start.
@@ -115,6 +111,17 @@ module AgentVmTunnel
           "Configure cloud-vm-setup.sh as the setup script and bin/agent-vm-tunnel ensure as the maintenance script."
         else
           "Run cloud-vm-setup.sh once, then run bin/agent-vm-tunnel ensure whenever the environment resumes."
+        end
+      end
+
+      def provider_setup_step
+        case provider
+        when "claude"
+          "In Claude Cloud, use cloud-vm-setup.sh as setup, paste the environment variable, and select Full network access."
+        when "codex"
+          "In Codex Cloud, use cloud-vm-setup.sh as setup, bin/agent-vm-tunnel ensure as maintenance, and add the environment variable."
+        else
+          "Run cloud-vm-setup.sh in the target Linux environment and add the environment variable."
         end
       end
 

@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+- Add explicit Claude, Codex, and generic provider targets backed by shared
+  setup and maintenance artifacts.
+- Replace global process matching with locked, project-owned PID/state
+  reconciliation; credential changes restart the tunnel and removal stops it.
+- Keep the chisel fingerprint independently pinned, strictly validate dynamic
+  coordinates, verify downloaded chisel binaries, and remove shell re-parsing.
+- Rely on Action Cable's exact same-origin protection instead of trusting every
+  sibling preview origin.
+- Detect the active database and JavaScript package manager, honor `APP_PORT`,
+  and select the exact `.ruby-version`.
+
 ## [0.1.0] - 2026-07-06
 
 - Initial release.

@@ -1,0 +1,9 @@
+source "https://rubygems.org"
+
+gemspec path: ".."
+gem "actioncable", "~> 7.1.0"
+gem "actionpack", "~> 7.1.0"
+gem "irb"
+gem "minitest", "~> 5.16"
+gem "rake", "~> 13.0"
+gem "standard", "~> 1.3"

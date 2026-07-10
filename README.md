@@ -1,7 +1,8 @@
 # agent_vm_tunnel
 
-Public live-preview URLs for Rails apps you build inside a **Claude Cloud VM**
-(claude.ai/code) — or any sandbox that can't accept inbound connections.
+Public live-preview URLs for Rails apps you build inside a **Claude or Codex
+Cloud environment** — or another Linux sandbox that can't accept inbound
+connections.
 
 A Cloud VM has no port-forwarding and its egress is a TLS-intercepting proxy, so
 you can't just open `localhost:3000` in a browser, and `cloudflared`/`ngrok`
@@ -13,12 +14,11 @@ its own credential.
 
 Two moving parts, both installed for you:
 
-- a **Railtie** that allows the tunnel's hosts and Action Cable origins, so
-  tunneled page loads and Turbo Streams / live reload aren't rejected — no
-  editing of `config/environments`.
-- a **keep-alive script** (`bin/agent-vm-tunnel`) plus **Claude Code hooks** that bring
-  the database + the app + the tunnel up on session start and every turn, and
-  self-heal after the VM reaps them on idle.
+- a **Railtie** that allows the tunnel's hosts. Action Cable retains Rails'
+  exact same-origin protection, so one preview cannot open authenticated
+  WebSockets to a sibling preview.
+- a locked, project-owned **maintenance script** (`bin/agent-vm-tunnel`) that
+  reconciles the database, app, and tunnel after an environment resumes.
 
 The tunnel server itself lives in
 [firstdraft/agent-vm-tunnel](https://github.com/firstdraft/agent-vm-tunnel);
@@ -36,7 +36,7 @@ gem "agent_vm_tunnel", github: "firstdraft/agent_vm_tunnel"
 
 ```bash
 bundle install
-bin/rails generate agent_vm_tunnel:install
+bin/rails generate agent_vm_tunnel:install --provider=claude
 ```
 
 The generator adds:
@@ -45,6 +45,7 @@ The generator adds:
 |---|---|
 | `bin/agent-vm-tunnel` | Idempotent keep-alive: the database + the app + the chisel tunnel |
 | `cloud-vm-setup.sh` | One-shot Cloud VM provisioning (Ruby, your database, gems, chisel) |
+| `config/agent_vm_tunnel.json` | Shared, pinned host/fingerprint/provider configuration |
 | `.claude/settings.json` | `SessionStart` + `UserPromptSubmit` hooks that run `bin/agent-vm-tunnel` |
 
 It **merges** into an existing `.claude/settings.json` — your other hooks and
@@ -74,8 +75,23 @@ settings are left alone.
 3. **Start a session.** The hooks run `bin/agent-vm-tunnel` every turn, so the app +
    tunnel come up on their own. Open `https://<you>-<app>.firstdraft.io`.
 
-Run `bin/agent-vm-tunnel` by hand any time to force a (re)start. The preview URL is
+Run `bin/agent-vm-tunnel ensure` by hand any time to reconcile state, or
+`bin/agent-vm-tunnel status` to inspect it. The preview URL is
 public — turn on Basic Auth from the dashboard if you want a lock on it.
+
+## Use it (Codex Cloud)
+
+Generate the same provider-neutral scripts without Claude project hooks:
+
+```bash
+bin/rails generate agent_vm_tunnel:install --provider=codex
+```
+
+Configure `cloud-vm-setup.sh` as the environment setup command and
+`bin/agent-vm-tunnel ensure` as its maintenance command. Add the dashboard's
+`AGENT_VM_TUNNEL` value to the environment and permit runtime HTTPS/WebSocket
+egress to the configured tunnel host. Provider-specific behavior stays behind
+the explicit `--provider` option; `--provider=generic` generates scripts only.
 
 ## Configuration
 
@@ -85,35 +101,39 @@ configure to use it.
 ### Point at your own tunnel box
 
 If you run your own [agent-vm-tunnel](https://github.com/firstdraft/agent-vm-tunnel)
-server, set the host once — the generator bakes it into `bin/agent-vm-tunnel` and
-`cloud-vm-setup.sh`:
+server, set the host and independently obtained chisel fingerprint once. The
+generator writes both to the single configuration consumed by Rails and the
+maintenance script:
 
 ```bash
-bin/rails generate agent_vm_tunnel:install --host preview.example.com
+bin/rails generate agent_vm_tunnel:install \
+  --host preview.example.com \
+  --fingerprint 'base64-chisel-server-fingerprint='
 ```
 
-And tell the Railtie the same host (so it allows the right hosts/origins),
-either with an env var:
+`AGENT_VM_TUNNEL_HOST` can override that host at runtime for both components.
+`AGENT_VM_TUNNEL_FINGERPRINT` similarly provides an explicit pin override.
 
 ```bash
 AGENT_VM_TUNNEL_HOST=preview.example.com
 ```
 
-or an initializer:
+Ruby-only settings still belong in an initializer:
 
 ```ruby
 # config/initializers/agent_vm_tunnel.rb
 AgentVmTunnel.configure do |config|
   config.host = "preview.example.com"
   # config.environments = [:development]      # where the Railtie applies
-  # config.allow_localhost = true             # also allow http://localhost:* cable origins
   # config.extra_allowed_hosts = [".example.dev"]
+  # Explicit exceptions only; normal Cable traffic uses exact same-origin.
   # config.extra_allowed_origins = [%r{\Ahttps://.*\.example\.dev\z}]
 end
 ```
 
-The generator also takes `--fingerprint` if your server's chisel fingerprint
-isn't discoverable at `https://<host>/tunnel` on first connect.
+The public coordinates endpoint may update only `connect_url`; its fingerprint
+is ignored so a TLS-intercepting proxy cannot replace the independently pinned
+chisel identity.
 
 ## How the Railtie config maps
 
@@ -122,14 +142,12 @@ For host `firstdraft.io` the Railtie is equivalent to adding this to
 
 ```ruby
 config.hosts << ".firstdraft.io"
-config.action_cable.allowed_request_origins = [
-  %r{\Ahttps://[a-z0-9-]+\.firstdraft\.io\z},
-  %r{\Ahttp://localhost:\d+\z}
-]
 ```
 
-except it merges with (rather than replaces) any origins already configured, and
-only applies in the environments you list.
+Action Cable sees the public Host and `X-Forwarded-Proto` preserved by the
+reverse proxy, so Rails' built-in exact same-origin check accepts Turbo Streams
+without a wildcard sibling-domain exception. Explicit extra origins are merged,
+never substituted.
 
 ## Slow VM setup? Vendor your gems
 

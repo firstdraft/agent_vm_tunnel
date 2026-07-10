@@ -13,12 +13,20 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: Ruby ${{ matrix.ruby }}
+    name: Ruby ${{ matrix.ruby }} / Rails ${{ matrix.rails }}
     strategy:
+      fail-fast: false
       matrix:
-        ruby:
-          - '3.3'
-          - '3.4'
+        include:
+          - { ruby: '3.3', rails: '7.0' }
+          - { ruby: '3.3', rails: '7.1' }
+          - { ruby: '3.3', rails: '7.2' }
+          - { ruby: '3.3', rails: '8.0' }
+          - { ruby: '3.3', rails: '8.1' }
+          - { ruby: '3.4', rails: '7.2' }
+          - { ruby: '3.4', rails: '8.0' }
+          - { ruby: '3.4', rails: '8.1' }
+          - { ruby: '4.0', rails: '8.1' }
 
     steps:
       - uses: actions/checkout@v6
@@ -29,5 +37,9 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
+        env:
+          BUNDLE_GEMFILE: ${{ github.workspace }}/gemfiles/rails_${{ matrix.rails }}.gemfile
       - name: Run the default task
         run: bundle exec rake
+        env:
+          BUNDLE_GEMFILE: ${{ github.workspace }}/gemfiles/rails_${{ matrix.rails }}.gemfile
