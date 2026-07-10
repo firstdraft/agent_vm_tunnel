@@ -3,16 +3,15 @@
 require_relative "agent_vm_tunnel/version"
 require_relative "agent_vm_tunnel/configuration"
 
-# Public live-preview URLs for Rails apps built inside Claude Cloud VMs (and
-# similar no-inbound sandboxes), served through a chisel reverse tunnel.
+# Public live-preview URLs for Rails apps built inside Codex, Claude, and other
+# outbound-only cloud environments, served through a chisel reverse tunnel.
 #
 # The library half is tiny: a Railtie that teaches Rails host authorization and
 # Action Cable about the tunnel's public hosts so tunneled page loads and
 # WebSockets aren't rejected. The moving parts that actually hold the tunnel
-# open (a keep-alive script and the Claude Code hooks that run it) are shell,
-# not Ruby — they have to repair the VM's Ruby before Bundler can load — so the
-# install generator drops those into the host app rather than the gem running
-# them.
+# open are shell, not Ruby — they have to repair the environment's Ruby before
+# Bundler can load — so the install generator drops provider-aware setup and
+# lifecycle files into the host app rather than the gem running them.
 module AgentVmTunnel
   class Error < StandardError; end
 

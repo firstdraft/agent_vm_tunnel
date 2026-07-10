@@ -33,9 +33,8 @@ use_exact_ruby() {
   return 1
 }
 
-install_claude_ruby() {
-  [ "$PROVIDER" = claude ] || return 1
-  [ "$(uname -m)" = x86_64 ] || { echo "cloud-vm-setup: Claude ruby-builder fallback supports x86_64 only" >&2; return 1; }
+install_portable_ruby() {
+  [ "$(uname -m)" = x86_64 ] || { echo "cloud-vm-setup: ruby-builder fallback supports x86_64 only" >&2; return 1; }
   local prefix archive tmp actual
   prefix="/opt/hostedtoolcache/Ruby/$RUBY_VERSION"
   [ -w /opt ] || [ -w /opt/hostedtoolcache ] || { echo "cloud-vm-setup: cannot write /opt/hostedtoolcache" >&2; return 1; }
@@ -56,8 +55,8 @@ install_claude_ruby() {
   export PATH="$prefix/x64/bin:$PATH"
 }
 
-use_exact_ruby || { install_claude_ruby && use_exact_ruby; } || {
-  echo "cloud-vm-setup: Ruby $RUBY_VERSION is unavailable. Codex/generic targets require Ruby on PATH, asdf, or mise." >&2
+use_exact_ruby || { install_portable_ruby && use_exact_ruby; } || {
+  echo "cloud-vm-setup: Ruby $RUBY_VERSION is unavailable from PATH, asdf, mise, or the portable fallback." >&2
   exit 1
 }
 [ "$(ruby -e 'print RUBY_VERSION')" = "$RUBY_VERSION" ] || { echo "cloud-vm-setup: selected the wrong Ruby" >&2; exit 1; }

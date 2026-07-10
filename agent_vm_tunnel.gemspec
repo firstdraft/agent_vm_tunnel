@@ -8,16 +8,15 @@ Gem::Specification.new do |spec|
   spec.authors = ["Raghu Betina"]
   spec.email = ["raghu@firstdraft.com"]
 
-  spec.summary = "Public live-preview URLs for Rails apps built in Claude Cloud VMs, over a chisel reverse tunnel."
+  spec.summary = "Public Rails preview URLs for Codex, Claude, and outbound-only cloud environments."
   spec.description = <<~DESC
-    Claude Cloud VMs (and similar sandboxes) can't accept inbound connections,
-    so you can't just open the Rails server you're building in a browser.
-    agent_vm_tunnel exposes it at a public https://<name>.firstdraft.io URL
-    through a self-hosted chisel reverse tunnel. Add the gem and run
-    `rails g agent_vm_tunnel:install`: a Railtie allows the tunnel hosts and
-    Action Cable origins automatically, and the generator drops in the
-    keep-alive script and Claude Code hooks that bring the app + tunnel up on
-    every turn. Point it at the default firstdraft.io tunnel or your own box.
+    Cloud development containers often cannot accept inbound connections, so
+    their Rails servers are not directly accessible from a browser.
+    agent_vm_tunnel exposes an app through a pinned chisel reverse tunnel at an
+    opaque public HTTPS URL. Its Railtie configures Rails host authorization
+    while retaining exact same-origin Action Cable protection. Its generator
+    installs provider-aware setup and lifecycle scripts for Codex Cloud,
+    Claude cloud environments, or a generic Linux sandbox.
   DESC
   spec.homepage = "https://github.com/firstdraft/agent_vm_tunnel"
   spec.license = "MIT"
@@ -25,6 +24,7 @@ Gem::Specification.new do |spec|
   spec.metadata["allowed_push_host"] = "https://rubygems.org"
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = spec.homepage
+  spec.metadata["documentation_uri"] = "#{spec.homepage}/tree/main/docs"
   spec.metadata["changelog_uri"] = "#{spec.homepage}/blob/main/CHANGELOG.md"
   spec.metadata["rubygems_mfa_required"] = "true"
 

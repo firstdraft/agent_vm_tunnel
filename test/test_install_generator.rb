@@ -120,7 +120,37 @@ class InstallGeneratorTest < Rails::Generators::TestCase
     end
     assert_file "cloud-vm-setup.sh", /PROVIDER="codex"/
     assert_file "bin/agent-vm-tunnel"
+    assert_file "AGENTS.md", /Live preview in Codex Cloud/
     assert_no_file ".claude/settings.json"
+  end
+
+  def test_both_target_installs_claude_hooks_and_codex_guidance
+    run_generator ["--provider=both"]
+
+    assert_file "config/agent_vm_tunnel.json" do |content|
+      assert_equal "both", JSON.parse(content).fetch("provider")
+    end
+    assert_file ".claude/settings.json" do |content|
+      json = JSON.parse(content)
+      assert runs_preview?(json.dig("hooks", "SessionStart"))
+      assert runs_preview?(json.dig("hooks", "UserPromptSubmit"))
+    end
+    assert_file "AGENTS.md", /Live preview in Codex Cloud/
+    assert_file "bin/agent-vm-tunnel", /CLAUDE_PROJECT_DIR/
+  end
+
+  def test_codex_guidance_preserves_existing_agents_and_is_idempotent
+    File.write(File.join(destination_root, "AGENTS.md"), "# Existing guidance\n\nKeep this.\n")
+
+    run_generator ["--provider=codex"]
+    run_generator ["--provider=codex", "--force"]
+
+    assert_file "AGENTS.md" do |content|
+      assert_includes content, "# Existing guidance"
+      assert_includes content, "Keep this."
+      assert_equal 1, content.scan("agent-vm-tunnel:codex:start").length
+      assert_equal 1, content.scan("agent-vm-tunnel:codex:end").length
+    end
   end
 
   def test_generated_shell_is_syntactically_valid_and_avoids_global_process_matching

@@ -68,16 +68,18 @@ SETTINGS="$("$RUBY_BIN" -rjson -e '
   labels = host.split(".")
   abort "invalid tunnel host" unless host.match?(/\A[a-z0-9.-]+\z/) && !host.include?("..") && labels.all? { |l| l.match?(/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/) }
   abort "invalid chisel fingerprint" unless fp.match?(/\A[A-Za-z0-9+\/]{43}=\z/)
-  abort "invalid provider" unless %w[claude codex generic].include?(provider)
+  abort "invalid provider" unless %w[claude codex both generic].include?(provider)
   STDOUT.write(host, "\t", fp, "\t", provider)
 ' "$CONFIG_FILE")" || { fail "invalid $CONFIG_FILE"; exit 1; }
 IFS=$'\t' read -r TUNNEL_HOST FINGERPRINT PROVIDER <<<"$SETTINGS"
 [ -n "$TUNNEL_HOST" ] && [ -n "$FINGERPRINT" ] && [ -n "$PROVIDER" ] || { fail "invalid $CONFIG_FILE"; exit 1; }
 
-# Claude restores /usr/local/bin between sessions. Repoint it only to the exact
-# app Ruby, never to a wildcard version. Codex/generic environments are not
-# mutated. Failure is harmless because every owned child gets PATH explicitly.
-if [ "$PROVIDER" = claude ] && [ -w /usr/local/bin ]; then
+# Claude restores /usr/local/bin between sessions. In a Claude runtime, repoint
+# it only to the exact app Ruby, never to a wildcard version. The environment
+# marker keeps a `both` repository from mutating Codex. Failure is harmless
+# because every owned child gets PATH explicitly.
+if { [ "$PROVIDER" = claude ] || [ "$PROVIDER" = both ]; } &&
+    [ -n "${CLAUDE_PROJECT_DIR:-}" ] && [ -w /usr/local/bin ]; then
   for tool in "$RUBY_BINDIR"/*; do [ -x "$tool" ] && ln -sf "$tool" /usr/local/bin/ 2>/dev/null || true; done
 fi
 

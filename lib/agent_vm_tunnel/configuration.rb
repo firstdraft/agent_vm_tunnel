@@ -35,8 +35,8 @@ module AgentVmTunnel
       @host || project_settings.fetch("host", DEFAULT_HOST)
     end
 
-    # Values for `config.hosts` — a leading dot allows every subdomain (the
-    # <github-login>.<host> previews) plus the apex.
+    # Values for `config.hosts` — a leading dot allows every opaque preview
+    # subdomain plus the apex.
     def allowed_hosts
       [".#{host}", *extra_allowed_hosts]
     end

@@ -8,10 +8,9 @@ module AgentVmTunnel
     # `rails g agent_vm_tunnel:install`
     #
     # Drops the shell half of the tunnel into the host app: the keep-alive
-    # script (bin/agent-vm-tunnel), the Cloud VM setup script, and the Claude Code hooks
-    # that run the keep-alive on every turn. The Rails config half is handled
-    # automatically by the Railtie, so this generator never touches
-    # config/environments.
+    # script, the cloud-environment setup script, and the selected providers'
+    # lifecycle integration. The Rails config half is handled automatically by
+    # the Railtie, so this generator never touches config/environments.
     class InstallGenerator < ::Rails::Generators::Base
       source_root File.expand_path("templates", __dir__)
 
@@ -25,14 +24,14 @@ module AgentVmTunnel
       class_option :fingerprint, type: :string, default: nil,
         desc: "Pinned chisel server fingerprint (required for a custom --host)"
       class_option :provider, type: :string, default: "claude",
-        desc: "Cloud provider target: claude, codex, or generic"
+        desc: "Cloud provider target: claude, codex, both, or generic"
 
       def validate_options
         unless host.match?(/\A[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\z/) && !host.include?("..")
           raise Thor::Error, "--host must be a lowercase DNS name"
         end
-        unless %w[claude codex generic].include?(provider)
-          raise Thor::Error, "--provider must be claude, codex, or generic"
+        unless %w[claude codex both generic].include?(provider)
+          raise Thor::Error, "--provider must be claude, codex, both, or generic"
         end
         unless fingerprint.match?(/\A[A-Za-z0-9+\/]{43}=\z/)
           raise Thor::Error, "--fingerprint is required for a custom host and must be a 44-character base64 chisel fingerprint"
@@ -58,7 +57,7 @@ module AgentVmTunnel
       end
 
       def install_claude_hooks
-        return unless provider == "claude"
+        return unless %w[claude both].include?(provider)
 
         rel = ".claude/settings.json"
         abs = File.join(destination_root, rel)
@@ -72,6 +71,32 @@ module AgentVmTunnel
           create_file rel, JSON.pretty_generate(settings) + "\n", force: true
           say_status :hooks, "added #{added.join(" + ")} → bin/agent-vm-tunnel", :green
         end
+      end
+
+      def install_codex_guidance
+        return unless %w[codex both].include?(provider)
+
+        rel = "AGENTS.md"
+        abs = File.join(destination_root, rel)
+        existing = File.exist?(abs) ? File.read(abs).rstrip : ""
+        section = <<~MARKDOWN.rstrip
+          <!-- agent-vm-tunnel:codex:start -->
+          ## Live preview in Codex Cloud
+
+          Before work that needs the running preview, run `bin/agent-vm-tunnel ensure`.
+          Use `bin/agent-vm-tunnel status` to diagnose the app or tunnel, and read
+          `tmp/agent-vm-tunnel/app.log` or `tmp/agent-vm-tunnel/tunnel.log` before
+          changing configuration. Never commit `AGENT_VM_TUNNEL`; it belongs in the
+          Codex Cloud environment variables.
+          <!-- agent-vm-tunnel:codex:end -->
+        MARKDOWN
+
+        updated = if existing.include?("<!-- agent-vm-tunnel:codex:start -->")
+          existing.sub(/<!-- agent-vm-tunnel:codex:start -->.*?<!-- agent-vm-tunnel:codex:end -->/m, section)
+        else
+          [existing, section].reject(&:empty?).join("\n\n")
+        end
+        create_file rel, updated + "\n", force: File.exist?(abs)
       end
 
       def print_next_steps
@@ -109,6 +134,8 @@ module AgentVmTunnel
           "Start a session. Project hooks run bin/agent-vm-tunnel ensure on session start and each prompt."
         when "codex"
           "Configure cloud-vm-setup.sh as the setup script and bin/agent-vm-tunnel ensure as the maintenance script."
+        when "both"
+          "Configure each provider separately: Claude uses the generated hooks; Codex uses the setup and maintenance fields."
         else
           "Run cloud-vm-setup.sh once, then run bin/agent-vm-tunnel ensure whenever the environment resumes."
         end
@@ -120,6 +147,8 @@ module AgentVmTunnel
           "In Claude Cloud, use cloud-vm-setup.sh as setup, paste the environment variable, and select Full network access."
         when "codex"
           "In Codex Cloud, use cloud-vm-setup.sh as setup, bin/agent-vm-tunnel ensure as maintenance, and add the environment variable."
+        when "both"
+          "Configure both environments; use separate preview credentials if they may run at the same time."
         else
           "Run cloud-vm-setup.sh in the target Linux environment and add the environment variable."
         end

@@ -2,6 +2,10 @@
 
 - Add explicit Claude, Codex, and generic provider targets backed by shared
   setup and maintenance artifacts.
+- Add a `both` target for repositories used by Claude and Codex, including
+  idempotently merged Claude hooks and Codex `AGENTS.md` recovery guidance.
+- Add task-oriented provider setup, security, troubleshooting, concepts, and
+  self-hosting documentation; remove identity-bearing preview URL examples.
 - Replace global process matching with locked, project-owned PID/state
   reconciliation; credential changes restart the tunnel and removal stops it.
 - Keep the chisel fingerprint independently pinned, strictly validate dynamic
