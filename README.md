@@ -3,6 +3,8 @@
 Give a Rails app running inside Codex Cloud, a Claude cloud environment, or
 another outbound-only Linux sandbox a stable public HTTPS preview URL.
 
+**[Read the documentation](https://firstdraft.github.io/agent_vm_tunnel/)**
+
 ```text
 browser -> https://p-<opaque>.firstdraft.io -> Caddy -> chisel -> Rails :3000
 ```
@@ -38,8 +40,8 @@ bin/rails generate agent_vm_tunnel:install --provider=both
 
 Then follow the guide for the environment you are creating:
 
-- [Codex Cloud setup](docs/providers/codex-cloud.md)
-- [Claude cloud environment setup](docs/providers/claude-code.md)
+- [Codex Cloud setup](https://firstdraft.github.io/agent_vm_tunnel/providers/codex-cloud.html)
+- [Claude cloud environment setup](https://firstdraft.github.io/agent_vm_tunnel/providers/claude-code.html)
 - [Complete quickstart](docs/quickstart.md)
 
 Your tunnel dashboard supplies two things that are intentionally not committed:
