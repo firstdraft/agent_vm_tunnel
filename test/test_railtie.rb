@@ -4,10 +4,8 @@ require "test_helper"
 require "action_controller/railtie"
 require "action_cable/engine"
 require "rack/mock"
-# test_helper requires agent_vm_tunnel before Rails is loaded, so its
-# `if defined?(Rails::Railtie)` guard skips the railtie. Now that Rails is
-# loaded, force it in. (A real app loads gems after Rails, so the guard fires
-# there without help.)
+# Requiring the gem now loads its Railtie reliably even when Rails was not
+# already loaded. This explicit require is intentionally idempotent.
 require "agent_vm_tunnel/railtie"
 
 # Boots a real (minimal) Rails application so we exercise the actual initializer
@@ -44,10 +42,11 @@ class RailtieTest < Minitest::Test
     assert_equal 403, res.status
   end
 
-  def test_registers_action_cable_origins_on_the_server
-    origins = ActionCable.server.config.allowed_request_origins
-    assert origins.any? { |o| o.is_a?(Regexp) && o.match?("https://ada.firstdraft.io") },
-      "expected an allowed origin matching a preview subdomain, got #{origins.inspect}"
+  def test_relies_on_exact_same_origin_for_action_cable
+    cable = ActionCable.server.config
+    assert cable.allow_same_origin_as_host
+    refute Array(cable.allowed_request_origins).any? { |o| o === "https://another-tenant.firstdraft.io" },
+      "a sibling preview must not be an allowed cross-origin WebSocket origin"
   end
 
   def test_does_not_double_register_the_host

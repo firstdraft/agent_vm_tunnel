@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "rails/railtie"
+require "rails"
 
 module AgentVmTunnel
   # Teaches a host Rails app to accept tunnel traffic without any hand-editing of
@@ -29,9 +29,12 @@ module AgentVmTunnel
         next unless config.applies_to?(Rails.env)
         next unless defined?(ActionCable) && ActionCable.server
 
+        origins = config.allowed_origins
+        next if origins.empty?
+
         cable = ActionCable.server.config
         cable.allowed_request_origins =
-          Array(cable.allowed_request_origins) + config.allowed_origins
+          (Array(cable.allowed_request_origins) + origins).uniq
       end
     end
   end

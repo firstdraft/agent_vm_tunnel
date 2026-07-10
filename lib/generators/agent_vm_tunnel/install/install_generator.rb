@@ -24,7 +24,29 @@ module AgentVmTunnel
       class_option :host, type: :string, default: AgentVmTunnel::Configuration::DEFAULT_HOST,
         desc: "Tunnel base host (previews live at <name>.<host>)"
       class_option :fingerprint, type: :string, default: nil,
-        desc: "chisel server fingerprint fallback (defaults to the firstdraft.io tunnel's when --host is firstdraft.io)"
+        desc: "Pinned chisel server fingerprint (required for a custom --host)"
+      class_option :provider, type: :string, default: "claude",
+        desc: "Cloud provider target: claude, codex, or generic"
+
+      def validate_options
+        unless host.match?(/\A[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\z/) && !host.include?("..")
+          raise Thor::Error, "--host must be a lowercase DNS name"
+        end
+        unless %w[claude codex generic].include?(provider)
+          raise Thor::Error, "--provider must be claude, codex, or generic"
+        end
+        unless fingerprint.match?(/\A[A-Za-z0-9+\/]{43}=\z/)
+          raise Thor::Error, "--fingerprint is required for a custom host and must be a 44-character base64 chisel fingerprint"
+        end
+      end
+
+      def create_project_config
+        create_file "config/agent_vm_tunnel.json", JSON.pretty_generate({
+          "host" => host,
+          "fingerprint" => fingerprint,
+          "provider" => provider
+        }) + "\n", force: true
+      end
 
       def create_connector_script
         template "agent-vm-tunnel.tt", "bin/agent-vm-tunnel"
@@ -37,6 +59,8 @@ module AgentVmTunnel
       end
 
       def install_claude_hooks
+        return unless provider == "claude"
+
         rel = ".claude/settings.json"
         abs = File.join(destination_root, rel)
         settings = File.exist?(abs) ? JSON.parse(File.read(abs)) : {}
@@ -59,12 +83,10 @@ module AgentVmTunnel
             1. Claim a slot at https://#{options[:host]} and copy the one
                AGENT_VM_TUNNEL=<slot>:<password> value it shows you.
             2. In your Claude Cloud VM (claude.ai/code → Add cloud environment):
-               • Setup script → point it at this repo's cloud-vm-setup.sh
+               • Setup script → run this repo's cloud-vm-setup.sh
                • Environment variables → paste the AGENT_VM_TUNNEL value
                • Network access → Full (the tunnel needs unrestricted egress)
-            3. Start a session. The Claude Code hooks run bin/agent-vm-tunnel on every
-               turn, so the app + tunnel come up (and self-heal) automatically.
-               Open https://<your-github-login>.#{options[:host]}.
+            3. #{provider_next_step}
 
           Run bin/agent-vm-tunnel by hand any time to force a (re)start.
         STEPS
@@ -76,9 +98,24 @@ module AgentVmTunnel
         options[:host]
       end
 
+      def provider
+        options[:provider]
+      end
+
       def fingerprint
         return options[:fingerprint] if options[:fingerprint]
         (host == AgentVmTunnel::Configuration::DEFAULT_HOST) ? FIRSTDRAFT_FINGERPRINT : ""
+      end
+
+      def provider_next_step
+        case provider
+        when "claude"
+          "Start a session. Project hooks run bin/agent-vm-tunnel ensure on session start and each prompt."
+        when "codex"
+          "Configure cloud-vm-setup.sh as the setup script and bin/agent-vm-tunnel ensure as the maintenance script."
+        else
+          "Run cloud-vm-setup.sh once, then run bin/agent-vm-tunnel ensure whenever the environment resumes."
+        end
       end
 
       # Ensure a SessionStart and UserPromptSubmit hook each run bin/agent-vm-tunnel,
@@ -89,7 +126,7 @@ module AgentVmTunnel
         %w[SessionStart UserPromptSubmit].each_with_object([]) do |event, added|
           groups = (hooks[event] ||= [])
           next if runs_preview?(groups)
-          groups << {"hooks" => [{"type" => "command", "command" => "bin/agent-vm-tunnel", "timeout" => 60}]}
+          groups << {"hooks" => [{"type" => "command", "command" => "bin/agent-vm-tunnel ensure", "timeout" => 60}]}
           added << event
         end
       end

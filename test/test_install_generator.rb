@@ -13,31 +13,32 @@ class InstallGeneratorTest < Rails::Generators::TestCase
 
   def test_creates_executable_preview_with_default_host
     run_generator
-    assert_file "bin/agent-vm-tunnel" do |content|
-      assert_match "https://tunnel.firstdraft.io", content
-      assert_match "https://firstdraft.io/tunnel", content
-      assert_match InstallGeneratorTest.generator_class::FIRSTDRAFT_FINGERPRINT, content
+    assert_file "config/agent_vm_tunnel.json" do |content|
+      config = JSON.parse(content)
+      assert_equal "firstdraft.io", config["host"]
+      assert_equal InstallGeneratorTest.generator_class::FIRSTDRAFT_FINGERPRINT, config["fingerprint"]
+      assert_equal "claude", config["provider"]
     end
+    assert_file "bin/agent-vm-tunnel", /CONFIG_FILE=/
     assert File.executable?(File.join(destination_root, "bin/agent-vm-tunnel")), "bin/agent-vm-tunnel should be +x"
   end
 
-  def test_honors_custom_host_and_blanks_unknown_fingerprint
+  def test_custom_host_requires_an_explicit_fingerprint
     run_generator ["--host=preview.example.com"]
-    assert_file "bin/agent-vm-tunnel" do |content|
-      assert_match "https://tunnel.preview.example.com", content
-      assert_match "https://preview.example.com/tunnel", content
-      assert_match(/FINGERPRINT=""/, content)
-    end
+    assert_no_file "bin/agent-vm-tunnel"
   end
 
   def test_accepts_explicit_fingerprint
-    run_generator ["--host=preview.example.com", "--fingerprint=ABC123="]
-    assert_file "bin/agent-vm-tunnel", /FINGERPRINT="ABC123="/
+    fingerprint = "A" * 43 + "="
+    run_generator ["--host=preview.example.com", "--fingerprint=#{fingerprint}"]
+    assert_file "config/agent_vm_tunnel.json" do |content|
+      assert_equal({"host" => "preview.example.com", "fingerprint" => fingerprint, "provider" => "claude"}, JSON.parse(content))
+    end
   end
 
   def test_creates_cloud_vm_setup_script
     run_generator
-    assert_file "cloud-vm-setup.sh", /tunnel\.firstdraft\.io/
+    assert_file "cloud-vm-setup.sh", /PROVIDER="claude"/
     assert File.executable?(File.join(destination_root, "cloud-vm-setup.sh"))
   end
 
@@ -47,7 +48,7 @@ class InstallGeneratorTest < Rails::Generators::TestCase
       # detects the adapter from the lockfile and branches on it
       assert_match(/Gemfile\.lock/, content)
       assert_match(/pg\)/, content)      # PostgreSQL branch
-      assert_match(/sqlite3 \| ""\)/, content)  # SQLite / none = no server
+      assert_match(/sqlite\|sqlite3\|""\)/, content)  # SQLite / none = no server
       # no unconditional Postgres install
       refute_match(/^apt-get install -y -qq postgresql$/, content)
     end
@@ -64,7 +65,7 @@ class InstallGeneratorTest < Rails::Generators::TestCase
   def test_preview_only_starts_a_daemon_for_server_databases
     run_generator
     assert_file "bin/agent-vm-tunnel" do |content|
-      assert_match(/db_gem=/, content)
+      assert_match(/DB_ADAPTER=/, content)
       assert_match(/pg\)/, content)
     end
   end
@@ -98,7 +99,7 @@ class InstallGeneratorTest < Rails::Generators::TestCase
       # the pre-existing SessionStart hook is preserved AND ours is added
       commands = json.dig("hooks", "SessionStart").flat_map { |g| g["hooks"].map { |h| h["command"] } }
       assert_includes commands, "echo hi"
-      assert_includes commands, "bin/agent-vm-tunnel"
+      assert_includes commands, "bin/agent-vm-tunnel ensure"
       # UserPromptSubmit gets added fresh
       assert runs_preview?(json.dig("hooks", "UserPromptSubmit"))
     end
@@ -110,6 +111,27 @@ class InstallGeneratorTest < Rails::Generators::TestCase
     run_generator ["--force"]
     second = File.read(File.join(destination_root, ".claude/settings.json"))
     assert_equal JSON.parse(first), JSON.parse(second), "re-running should not duplicate hooks"
+  end
+
+  def test_codex_target_generates_maintenance_artifacts_without_claude_hooks
+    run_generator ["--provider=codex"]
+    assert_file "config/agent_vm_tunnel.json" do |content|
+      assert_equal "codex", JSON.parse(content).fetch("provider")
+    end
+    assert_file "cloud-vm-setup.sh", /PROVIDER="codex"/
+    assert_file "bin/agent-vm-tunnel"
+    assert_no_file ".claude/settings.json"
+  end
+
+  def test_generated_shell_is_syntactically_valid_and_avoids_global_process_matching
+    run_generator ["--provider=generic"]
+    %w[bin/agent-vm-tunnel cloud-vm-setup.sh].each do |path|
+      absolute = File.join(destination_root, path)
+      assert system("bash", "-n", absolute), "#{path} should pass bash -n"
+    end
+    connector = File.read(File.join(destination_root, "bin/agent-vm-tunnel"))
+    refute_includes connector, "bash -c"
+    refute_includes connector, "pgrep"
   end
 
   private

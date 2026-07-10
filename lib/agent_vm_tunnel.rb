@@ -39,4 +39,4 @@ module AgentVmTunnel
   end
 end
 
-require_relative "agent_vm_tunnel/railtie" if defined?(Rails::Railtie)
+require_relative "agent_vm_tunnel/railtie"
